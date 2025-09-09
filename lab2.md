@@ -33,6 +33,7 @@ Aprender a crear imágenes con `Dockerfile`, comprender buenas prácticas de con
 
    ```
    flask==2.2.2
+   Werkzeug==2.2.2
    ```
 
 4. **Crear `Dockerfile`:**
