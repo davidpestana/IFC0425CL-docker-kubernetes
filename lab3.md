@@ -1,117 +1,200 @@
-# 🧪 Laboratorio 3: Seguridad en contenedores e imágenes
+# 🧪 Laboratorio 3: Stack multicontenedor (app + base de datos)
 
-**Objetivo:**
-Aprender a analizar imágenes en busca de vulnerabilidades, aplicar buenas prácticas de seguridad y gestionar secretos de forma correcta.
+### 🎯 Objetivo
 
-**Duración estimada:** 2h
-
----
-
-## 🔹 Fase 1: Namespaces y aislamiento de procesos
-
-1. Ejecutar un contenedor con usuario root (por defecto):
-
-   ```bash
-   docker run -it ubuntu:22.04 bash
-   whoami
-   ```
-
-   👉 Observar que dentro del contenedor se ejecuta como **root**.
-
-2. Salir y ejecutar contenedor como usuario limitado:
-
-   ```bash
-   docker run -it --user 1000:1000 ubuntu:22.04 bash
-   whoami
-   ```
-
-   👉 Diferencia de permisos entre root vs usuario sin privilegios.
+* Aprender a usar `docker-compose` para levantar varios servicios que colaboran entre sí.
+* Montar una aplicación web (Python/Flask o Node/Express) conectada a una base de datos (MySQL o PostgreSQL).
+* Entender cómo definir redes, volúmenes y variables de entorno en YAML.
 
 ---
 
-## 🔹 Fase 2: Escaneo de imágenes
+## 1️⃣ Preparación
 
-1. Instalar **Trivy** (si no está disponible en el entorno):
+* Crear carpeta de trabajo `lab03-stack/`.
+* Dentro, dos subcarpetas:
 
-   ```bash
-   sudo apt-get install -y wget
-   wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.53.0_Linux-64bit.deb
-   sudo dpkg -i trivy_0.53.0_Linux-64bit.deb
-   ```
+  ```
+  lab03-stack/
+  ├── app/
+  │   └── Dockerfile
+  │   └── app.py   (si Python) ó index.js (si Node)
+  └── docker-compose.yml
+  ```
+* Verificar que Docker y Docker Compose están instalados:
 
-2. Escanear imagen oficial de Nginx:
-
-   ```bash
-   trivy image nginx:latest
-   ```
-
-3. Escanear la imagen personalizada creada en **Lab 2** (`flask-app:1.0`):
-
-   ```bash
-   trivy image flask-app:1.0
-   ```
-
-4. Identificar vulnerabilidades críticas/altas y discutir mitigaciones (ejemplo: usar imágenes `-slim` o `distroless`).
+  ```bash
+  docker --version
+  docker compose version
+  ```
 
 ---
 
-## 🔹 Fase 3: Gestión segura de credenciales
+## 2️⃣ Aplicación sencilla
 
-1. Ejecutar contenedor con variable de entorno (poco seguro):
+### Opción A: Python (Flask)
 
-   ```bash
-   docker run -e DB_PASSWORD=SuperSecret mysql:8.0
-   ```
+**app/app.py**
 
-   👉 Verificar que las variables quedan expuestas con:
+```python
+from flask import Flask
+import os
+import psycopg2
 
-   ```bash
-   docker inspect <container_id> | grep DB_PASSWORD
-   ```
+app = Flask(__name__)
 
-2. Usar **Docker Secrets** (cuando se trabaja con Docker Swarm) o simular gestión segura:
+@app.route("/")
+def hello():
+    try:
+        conn = psycopg2.connect(
+            dbname=os.getenv("POSTGRES_DB", "testdb"),
+            user=os.getenv("POSTGRES_USER", "user"),
+            password=os.getenv("POSTGRES_PASSWORD", "pass"),
+            host="db"
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT NOW();")
+        result = cur.fetchone()
+        conn.close()
+        return f"📦 Hola desde Flask! Hora en DB: {result[0]}"
+    except Exception as e:
+        return f"Error conectando a DB: {e}"
 
-   * Crear archivo `db_password.txt` con contenido `SuperSecret`.
-   * Montarlo como volumen:
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+```
 
-     ```bash
-     docker run -d \
-       -v $(pwd)/db_password.txt:/run/secrets/db_password:ro \
-       nginx
-     ```
+**app/Dockerfile**
 
-   👉 Dentro del contenedor, el secreto queda disponible en `/run/secrets/db_password`.
+```dockerfile
+FROM python:3.11-slim
 
----
+WORKDIR /app
+COPY app.py /app
 
-## 🔹 Fase 4: Buenas prácticas en imágenes
+RUN pip install flask psycopg2-binary
 
-1. Comparar tamaños de imágenes:
-
-   ```bash
-   docker pull python:3.11
-   docker pull python:3.11-slim
-   docker pull gcr.io/distroless/python3
-   docker images | grep python
-   ```
-
-   👉 Mostrar diferencias de tamaño y superficie de ataque.
-
-2. Reconstruir la imagen del **Lab 2** usando `python:3.11-slim` para mejorar seguridad.
-
----
-
-## 📌 Conclusión
-
-* Se entendió cómo **namespaces y usuarios** refuerzan el aislamiento.
-* Se aprendió a **escanear imágenes** y detectar vulnerabilidades.
-* Se revisaron métodos de **gestión de secretos más seguros** que variables de entorno.
-* Se introdujeron **buenas prácticas de hardening** en construcción de imágenes.
+EXPOSE 5000
+CMD ["python", "app.py"]
+```
 
 ---
 
-💡 Para hacerlo más evaluable, puedo prepararte una **rúbrica de entrega** con 3 capturas obligatorias:
+### Opción B: Node (Express + pg)
 
-1. Resultado de `trivy` en `nginx:latest`.
-2. Inspección mostrando la diferencia entre secreto en ENV y secreto en fichero.
-3. Comparativa de tamaños de imágenes `python`.
+**app/index.js**
+
+```js
+const express = require("express");
+const { Client } = require("pg");
+
+const app = express();
+
+app.get("/", async (req, res) => {
+  try {
+    const client = new Client({
+      host: "db",
+      user: process.env.POSTGRES_USER || "user",
+      password: process.env.POSTGRES_PASSWORD || "pass",
+      database: process.env.POSTGRES_DB || "testdb"
+    });
+    await client.connect();
+    const result = await client.query("SELECT NOW()");
+    await client.end();
+    res.send("📦 Hola desde Express! Hora en DB: " + result.rows[0].now);
+  } catch (err) {
+    res.send("Error conectando a DB: " + err);
+  }
+});
+
+app.listen(8080, () => console.log("Servidor en puerto 8080"));
+```
+
+**app/Dockerfile**
+
+```dockerfile
+FROM node:20-slim
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+
+COPY index.js ./
+EXPOSE 8080
+CMD ["node", "index.js"]
+```
+
+**app/package.json**
+
+```json
+{
+  "name": "lab03-app",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.11.3"
+  }
+}
+```
+
+---
+
+## 3️⃣ docker-compose.yml
+
+```yaml
+version: "3.9"
+
+services:
+  app:
+    build: ./app
+    ports:
+      - "8080:8080"   # si Node
+      # - "5000:5000" # si Flask
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: testdb
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: testdb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+```
+
+---
+
+## 4️⃣ Ejecución
+
+1. Levantar el stack:
+
+   ```bash
+   docker compose up --build
+   ```
+2. Verificar contenedores:
+
+   ```bash
+   docker ps
+   ```
+3. Probar en navegador:
+
+   * Flask → `http://localhost:5000`
+   * Node → `http://localhost:8080`
+
+---
+
+## 5️⃣ Retos adicionales
+
+* **Reto 1**: Añadir un servicio `pgadmin` para administrar PostgreSQL vía web.
+* **Reto 2**: Añadir variables en `.env` en lugar de codificarlas en el YAML.
+* **Reto 3**: Crear un volumen persistente para que los datos sobrevivan aunque se borre el contenedor DB.
+

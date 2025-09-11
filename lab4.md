@@ -1,171 +1,117 @@
-# 🧪 Laboratorio 4: Primeros pasos con Kubernetes
+# 🧪 Laboratorio 3: Seguridad en contenedores e imágenes
 
 **Objetivo:**
-Familiarizarse con los componentes básicos de Kubernetes desplegando pods, servicios y un primer `Deployment` en un clúster local.
+Aprender a analizar imágenes en busca de vulnerabilidades, aplicar buenas prácticas de seguridad y gestionar secretos de forma correcta.
 
-**Duración estimada:** 2h – 2h30
-
----
-
-## 🔹 Fase 1: Preparar entorno
-
-1. **Comprobar instalación de kubectl**
-
-   ```bash
-   kubectl version --client
-   ```
-
-2. **Iniciar clúster local (ejemplo con Minikube):**
-
-   ```bash
-   minikube start
-   kubectl get nodes
-   ```
-
-   👉 Verificar que el nodo está en estado `Ready`.
+**Duración estimada:** 2h
 
 ---
 
-## 🔹 Fase 2: Desplegar un Pod básico
+## 🔹 Fase 1: Namespaces y aislamiento de procesos
 
-1. Crear pod `nginx-pod.yaml`:
-
-   ```yaml
-   apiVersion: v1
-   kind: Pod
-   metadata:
-     name: nginx-pod
-   spec:
-     containers:
-     - name: nginx
-       image: nginx:latest
-       ports:
-       - containerPort: 80
-   ```
-
-2. Aplicar manifiesto:
+1. Ejecutar un contenedor con usuario root (por defecto):
 
    ```bash
-   kubectl apply -f nginx-pod.yaml
+   docker run -it ubuntu:22.04 bash
+   whoami
    ```
 
-3. Verificar:
+   👉 Observar que dentro del contenedor se ejecuta como **root**.
+
+2. Salir y ejecutar contenedor como usuario limitado:
 
    ```bash
-   kubectl get pods
-   kubectl describe pod nginx-pod
+   docker run -it --user 1000:1000 ubuntu:22.04 bash
+   whoami
    ```
+
+   👉 Diferencia de permisos entre root vs usuario sin privilegios.
 
 ---
 
-## 🔹 Fase 3: Crear un Service para exponer el Pod
+## 🔹 Fase 2: Escaneo de imágenes
 
-1. Crear `nginx-service.yaml`:
-
-   ```yaml
-   apiVersion: v1
-   kind: Service
-   metadata:
-     name: nginx-service
-   spec:
-     type: NodePort
-     selector:
-       app: nginx
-     ports:
-       - port: 80
-         targetPort: 80
-         nodePort: 30080
-   ```
-
-2. Antes de aplicar, añadir **label** al Pod para que coincida con el selector:
-
-   ```yaml
-   metadata:
-     name: nginx-pod
-     labels:
-       app: nginx
-   ```
-
-3. Aplicar ambos manifiestos y verificar:
+1. Instalar **Trivy** (si no está disponible en el entorno):
 
    ```bash
-   kubectl apply -f nginx-pod.yaml
-   kubectl apply -f nginx-service.yaml
-   kubectl get svc
+   sudo apt-get install -y wget
+   wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.53.0_Linux-64bit.deb
+   sudo dpkg -i trivy_0.53.0_Linux-64bit.deb
    ```
 
-4. Probar acceso (Minikube):
+2. Escanear imagen oficial de Nginx:
 
    ```bash
-   minikube service nginx-service
+   trivy image nginx:latest
    ```
 
-   👉 Se debe abrir la página de bienvenida de Nginx.
+3. Escanear la imagen personalizada creada en **Lab 2** (`flask-app:1.0`):
+
+   ```bash
+   trivy image flask-app:1.0
+   ```
+
+4. Identificar vulnerabilidades críticas/altas y discutir mitigaciones (ejemplo: usar imágenes `-slim` o `distroless`).
 
 ---
 
-## 🔹 Fase 4: Escalar con un Deployment
+## 🔹 Fase 3: Gestión segura de credenciales
 
-1. Crear `nginx-deployment.yaml`:
-
-   ```yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: nginx-deployment
-   spec:
-     replicas: 3
-     selector:
-       matchLabels:
-         app: nginx
-     template:
-       metadata:
-         labels:
-           app: nginx
-       spec:
-         containers:
-         - name: nginx
-           image: nginx:latest
-           ports:
-           - containerPort: 80
-   ```
-
-2. Aplicar y comprobar:
+1. Ejecutar contenedor con variable de entorno (poco seguro):
 
    ```bash
-   kubectl apply -f nginx-deployment.yaml
-   kubectl get deployments
-   kubectl get pods -o wide
+   docker run -e DB_PASSWORD=SuperSecret mysql:8.0
    ```
+
+   👉 Verificar que las variables quedan expuestas con:
+
+   ```bash
+   docker inspect <container_id> | grep DB_PASSWORD
+   ```
+
+2. Usar **Docker Secrets** (cuando se trabaja con Docker Swarm) o simular gestión segura:
+
+   * Crear archivo `db_password.txt` con contenido `SuperSecret`.
+   * Montarlo como volumen:
+
+     ```bash
+     docker run -d \
+       -v $(pwd)/db_password.txt:/run/secrets/db_password:ro \
+       nginx
+     ```
+
+   👉 Dentro del contenedor, el secreto queda disponible en `/run/secrets/db_password`.
 
 ---
 
-## 🔹 Fase 5: Explorar recursos
+## 🔹 Fase 4: Buenas prácticas en imágenes
 
-* Ver logs de un pod:
+1. Comparar tamaños de imágenes:
 
-  ```bash
-  kubectl logs <pod_name>
-  ```
+   ```bash
+   docker pull python:3.11
+   docker pull python:3.11-slim
+   docker pull gcr.io/distroless/python3
+   docker images | grep python
+   ```
 
-* Entrar en un contenedor:
+   👉 Mostrar diferencias de tamaño y superficie de ataque.
 
-  ```bash
-  kubectl exec -it <pod_name> -- bash
-  ```
-
-* Escalar el Deployment a 5 réplicas:
-
-  ```bash
-  kubectl scale deployment nginx-deployment --replicas=5
-  kubectl get pods
-  ```
+2. Reconstruir la imagen del **Lab 2** usando `python:3.11-slim` para mejorar seguridad.
 
 ---
 
 ## 📌 Conclusión
 
-* Se aprendió a desplegar un **Pod** manualmente.
-* Se expuso un servicio con **NodePort**.
-* Se desplegó y escaló un **Deployment** con múltiples réplicas.
-* Se practicaron operaciones básicas de inspección y acceso a pods.
+* Se entendió cómo **namespaces y usuarios** refuerzan el aislamiento.
+* Se aprendió a **escanear imágenes** y detectar vulnerabilidades.
+* Se revisaron métodos de **gestión de secretos más seguros** que variables de entorno.
+* Se introdujeron **buenas prácticas de hardening** en construcción de imágenes.
+
+---
+
+💡 Para hacerlo más evaluable, puedo prepararte una **rúbrica de entrega** con 3 capturas obligatorias:
+
+1. Resultado de `trivy` en `nginx:latest`.
+2. Inspección mostrando la diferencia entre secreto en ENV y secreto en fichero.
+3. Comparativa de tamaños de imágenes `python`.
