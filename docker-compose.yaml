@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  pytonize:
+    build: ./src/pytonize
+    ports:
+        - "5000:5000" # si Flask
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: pytonize
+      PORT: 5000
+      HOST: 0.0.0.0
+    depends_on:
+      - db
+
+  nodeshark:
+    build: ./src/nodeshark
+    ports:
+      - "8080:8080"   # si Node
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: nodeshark
+      PORT: 8080
+    depends_on:
+      - db
+
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: testdb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4_container
+    restart: always
+    ports:
+      - "8888:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: david@david.com
+      PGADMIN_DEFAULT_PASSWORD: 1234
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+volumes:
+  db_data:
+  pgadmin-data:
