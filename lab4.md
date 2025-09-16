@@ -34,9 +34,15 @@ Aprender a analizar imágenes en busca de vulnerabilidades, aplicar buenas prác
 1. Instalar **Trivy** (si no está disponible en el entorno):
 
    ```bash
-   sudo apt-get install -y wget
-   wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.53.0_Linux-64bit.deb
-   sudo dpkg -i trivy_0.53.0_Linux-64bit.deb
+   sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+   
+   wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+   echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | \
+     sudo tee /etc/apt/sources.list.d/trivy.list
+   
+   sudo apt-get update
+   sudo apt-get install -y trivy
+
    ```
 
 2. Escanear imagen oficial de Nginx:
