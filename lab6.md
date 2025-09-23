@@ -75,6 +75,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: app-secret
+  namespace: lab-config
 type: Opaque
 stringData:
   API_KEY: "1234-ABCD-5678"
@@ -99,6 +100,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app-env
+  namespace: lab-config
 spec:
   replicas: 1
   selector:
@@ -170,6 +172,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: app-mount
+  namespace: lab-config
 spec:
   containers:
     - name: app
