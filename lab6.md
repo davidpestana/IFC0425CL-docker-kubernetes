@@ -52,6 +52,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: app-config
+  namespace: lab-config
 data:
   APP_MODE: "produccion"
   APP_COLOR: "azul"
